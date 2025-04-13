@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <title>Zakazivanje Razgovora</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 1rem;
+      max-width: 250px;
+      margin: auto;
+      background-color: #f4f4f9;
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+      font-size: 1.2rem;
+    }
+    label {
+      display: block;
+      margin-top: 0.75rem;
+      font-weight: bold;
+      color: #555;
+      font-size: 0.9rem;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 6px;
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      box-sizing: border-box;
+    }
+    input:focus, select:focus, button:focus {
+      outline: none;
+      border-color: #007BFF;
+      box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+    }
+    button {
+      background-color: #007BFF;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 1rem;
+      transition: background-color 0.3s ease;
+      font-size: 0.9rem;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .popup {
+      display: none;
+      padding: 10px;
+      margin-top: 1rem;
+      border-radius: 5px;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    .popup.success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .popup.error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .disabled {
+      background-color: #ddd;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <h2>Zakazivanje Razgovora</h2>
+  <form id="bookingForm">
+    <div class="form-group">
+      <label for="name">Ime i prezime:</label>
+      <input type="text" id="name" required>
+    </div>
+
+    <div class="form-group">
+      <label for="date">Datum:</label>
+      <input type="date" id="date" required>
+    </div>
+
+    <div class="form-group">
+      <label for="time">Vreme:</label>
+      <select id="time" required></select>
+    </div>
+
+    <div class="form-group">
+      <label for="phone">Broj telefona:</label>
+      <input type="tel" id="phone" required>
+    </div>
+
+    <button type="submit">Zakaži</button>
+  </form>
+
+  <div id="popup" class="popup"></div>
+
+  <script>
+    const form = document.getElementById('bookingForm');
+    const dateInput = document.getElementById('date');
+    const timeSelect = document.getElementById('time');
+    const popup = document.getElementById('popup');
+
+    const airtableApiKey = "pati3hw5KsBkfNoha.0d6a6eac65bb615da8d731e170257e5518deceb26211ff55d73900b78cfccff2";
+    const baseId = "appLyBEliYxoGjvnr";
+    const tableName = "Table 3";
+
+    let alreadySubmitted = false;
+
+    const allTimes = Array.from({ length: 9 }, (_, i) => `${9 + i}:00`);
+
+    // Funkcija za podešavanje minimun datuma na današnji datum
+    function setMinDate() {
+      const today = new Date();
+      const day = today.getDate();
+      const month = today.getMonth() + 1; // mesec je 0-indexiran
+      const year = today.getFullYear();
+      const formattedDate = `${year}-${month < 10 ? '0' + month : month}-${day < 10 ? '0' + day : day}`;
+      dateInput.setAttribute('min', formattedDate);  // Podesi min datum
+    }
+
+    async function updateTimeOptions() {
+      const selectedDate = dateInput.value;
+      const selectedDateObj = new Date(selectedDate);
+      const day = selectedDateObj.getDay(); // 0 - nedelja, 6 - subota
+
+      timeSelect.innerHTML = "";
+
+      if (!selectedDate || day === 0 || day === 6) {
+        const option = document.createElement('option');
+        option.value = "";
+        option.textContent = "Nema termina vikendom";
+        timeSelect.appendChild(option);
+        timeSelect.disabled = true;
+        return;
+      }
+
+      timeSelect.disabled = false;
+
+      const filter = `AND({Datum} = '${selectedDate}')`;
+      const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}?filterByFormula=${encodeURIComponent(filter)}`;
+
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${airtableApiKey}` }
+      });
+
+      let bookedTimes = [];
+      if (response.ok) {
+        const data = await response.json();
+        bookedTimes = data.records.map(rec => rec.fields["Vreme"]);
+      }
+
+      const availableTimes = allTimes.filter(t => !bookedTimes.includes(t));
+
+      if (availableTimes.length === 0) {
+        const option = document.createElement('option');
+        option.value = "";
+        option.textContent = "Nema dostupnih termina";
+        timeSelect.appendChild(option);
+        timeSelect.disabled = true;
+      } else {
+        availableTimes.forEach(t => {
+          const option = document.createElement('option');
+          option.value = t;
+          option.textContent = t;
+          timeSelect.appendChild(option);
+        });
+      }
+    }
+
+    function hidePopupAfterDelay() {
+      setTimeout(() => {
+        popup.style.display = "none";
+      }, 3000); // popup se sakrije nakon 3 sekunde
+    }
+
+    // Custom validacija za ime
+    document.getElementById('name').addEventListener('input', function (e) {
+      if (!e.target.value) {
+        e.target.setCustomValidity("Molimo vas da unesete ime i prezime.");
+      } else {
+        e.target.setCustomValidity("");
+      }
+    });
+
+    // Custom validacija za telefon
+    document.getElementById('phone').addEventListener('input', function (e) {
+      if (!e.target.value) {
+        e.target.setCustomValidity("Molimo vas da unesete broj telefona.");
+      } else {
+        e.target.setCustomValidity("");
+      }
+    });
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      // Proveri da li su svi podaci popunjeni
+      const name = document.getElementById('name').value;
+      const date = dateInput.value;
+      const time = timeSelect.value;
+      const phone = document.getElementById('phone').value;
+
+      if (!name || !date || !time || !phone) {
+        popup.textContent = "Sva polja moraju biti popunjena.";
+        popup.className = "popup error";
+        popup.style.display = "block";
+        hidePopupAfterDelay();
+        return;
+      }
+
+      if (alreadySubmitted) return;
+
+      const data = {
+        fields: {
+          "Ime i prezime": name,
+          "Datum": date,
+          "Vreme": time,
+          "Broj telefona": phone
+        }
+      };
+
+      const res = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${airtableApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(data)
+      });
+
+      if (res.ok) {
+        popup.textContent = "Uspešno ste zakazali termin!";
+        popup.className = "popup success";
+        popup.style.display = "block";
+        alreadySubmitted = true;
+        form.querySelector("button").disabled = true;
+        form.querySelector("button").classList.add('disabled');
+        form.querySelector("input").disabled = true;
+        form.querySelector("select").disabled = true;
+        await updateTimeOptions(); // osveži listu termina
+        hidePopupAfterDelay();
+      } else {
+        popup.textContent = "Greška prilikom zakazivanja. Pokušajte ponovo.";
+        popup.className = "popup error";
+        popup.style.display = "block";
+        hidePopupAfterDelay();
+      }
+    });
+
+    dateInput.addEventListener("change", updateTimeOptions);
+
+    // Postavi današnji datum i popuni početne termine
+    setMinDate();
+    const today = new Date();
+    dateInput.valueAsDate = today;
+    updateTimeOptions();
+  </script>
+</body>
+</html>
+``
